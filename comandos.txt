@@ -1,0 +1,233 @@
+--------------------#### coneccion de spark scala con java streaming
+import org.apache.spark._
+import org.apache.spark.streaming._
+import org.apache.spark.streaming.StreamingContext._ 
+
+val ssc = new StreamingContext(sc, Seconds(1))
+
+val lines = ssc.socketTextStream("localhost", 9999)
+
+val name = lines
+
+
+-----------------------------------------------------------
+
+
+spark-shell --driver-class-path mysql-connector-java-8.0.23.jar --jars mysql-connector-java-8.0.23.jar
+
+val database = "test"
+val table = "Netflix"
+val user = "e9h3v32zo154akrnmqlo"
+val password  = "pscale_pw_W9P5b4FZYZJZSrlwnxyHhWi2NPnL4BM3fwacPoAMZuL"
+val connString = "jdbc:mysql://us-east.connect.psdb.cloud/test?sslMode=VERIFY_IDENTITY"
+
+val jdbcDF = (spark.read.format("jdbc")
+.option("url", connString)
+.option("dbtable", table)
+.option("user", user)
+.option("password", password) 
+.option("driver", "com.mysql.cj.jdbc.Driver") 
+.load())
+
+jdbcDF.show()
+--------------------preprocesamiento for graph
+
+val a=jdbcDF.select("title").as[String].collect.toList
+val b=jdbcDF.select("duration").as[String].collect.map(w=>w.split(" ")(0).toInt).toList
+val z=a.zip(b)
+val df=z.toDF("title","duration")
+val df1=df.withColumn("duration",$"duration".cast("int"))
+
+
+bb: Array[java.io.Serializable] = Array((1L,alexandra dean))
+#peliculas o series que se realizan más de 60 minutos de duración
+df1.filter(df1("duration")>60 and df1("duration")<10).show()
+
+val b=kk.map{case (w,(x,y)=>(w,x,y))}
+
+------a grapho with an actor and his movies
+
+#recibe una entrada : nombre de un director
+import org.apache.spark.graphx._
+
+val name="Neeraj Pandey"
+//val dir=jdbcDF.select("director").distinct.collect
+//jdbcDF.createOrReplaceTempView("netflix")
+val titles=jdbcDF.filter(jdbcDF("director")===name).select("title").as[String].collect
+
+var arrN=Array[(Long,String)]()
+arrN =arrN:+ (0L,name)
+for(i<- 0 until titles.length){
+
+arrN=arrN :+ ((i+1).toLong,titles(i))
+}
+
+val vertex=sc.makeRDD(arrN)
+
+var edge=Array[org.apache.spark.graphx.Edge[String]]()
+
+
+for(v<-1 until arrN.length){edge=edge:+Edge(0L,v.toLong,"did")}
+
+val edges=sc.makeRDD(edge)
+
+val myGraph = Graph(vertex, edges)
+
+myGraph.vertices.collect
+
+myGraph.edges.collect
+
+
+val tit=jdbcDF.select("title").collect
+var vertex=Array[java.io.Serializable]()
+for(i<- 0 until dir.length){vertex= vertex :+ ((i+1).toString()+"L",dir(i) )}
+var edgeA=Array[java.io.Serializable]()
+for(i<-0 until tit.length){Edge()}
+
+
+----------------graphos
+import org.apache.spark.graphx.Edge
+import org.apache.spark.graphx.Graph
+import org.apache.spark.graphx.lib._
+
+
+----------streaming java y scala
+import org.apache.spark._
+import org.apache.spark.streaming._
+import org.apache.spark.streaming.StreamingContext._ 
+
+val ssc = new StreamingContext(sc, Seconds(1))
+val lines = ssc.socketTextStream("localhost", 9999)
+val words = lines.flatMap(_.split(" "))
+
+val pairs = words.map(word => (word, 1))
+
+val wordCounts = pairs.reduceByKey(_ + _)
+
+wordCounts.print()
+
+ssc.start() 
+---------------------------------------
+ML in scala
+director, tipo de show, pais, duración-----predecir rating
+
+vamos a crear diccionarios
+
+val b=jdbcDF.select("country").distinct.as[String].collect
+val a=jdbcDF.select("director").distinct.as[String].collect
+val c=jdbcDF.select("type").distinct.as[String].collect
+
+val dur=jdbcDF.select("duration").as[String].collect.map(w=>w.split(" ")(0).toInt).toList
+
+val target=jdbcDF.select("rating").distinct.as[String].collect
+
+
+val p_targe=scala.collection.mutable.Map(target(0)->0)
+
+var p_country=scala.collection.mutable.Map(b(0)->0)
+var p_dire=scala.collection.mutable.Map(a(0)->0)
+var p_type=scala.collection.mutable.Map(c(0)->0)
+
+
+ 
+for(v<-1 until b.length){p_country(b(v))=v}
+
+for(i<- 1 until a.length){p_dire(a(i))=i}
+
+for(j<- 1 until c.length){p_type(c(j))=j}
+
+for(t<- 1 until target.length){p_targe(target(t))=t}
+
+
+val coun=jdbcDF.select("country").as[String].map(w=>p_country(w)).collect.toList
+val direc=jdbcDF.select("director").as[String].map(w=>p_dire(w)).collect.toList
+val ty=jdbcDF.select("type").as[String].map(w=>p_type(w)).collect.toList
+val tar=jdbcDF.select("rating").as[String].map(w=>p_targe(w)).collect.toList
+
+val zip=direc.zip(coun).zip(ty).zip(dur).zip(tar)
+val  tup=zip.map{case (((((w,x),y),z),t))=>(w,x,y,z,t)}
+val df=tup.toDF("director","country","type","duration","rating")
+
+import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.ml.feature.StringIndexer
+import org.apache.spark.ml.feature.{IndexToString, StringIndexer, VectorIndexer}
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.rdd.RDD
+import spark.sqlContext.implicits._
+import org.apache.spark.sql.functions._
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.evaluation.RegressionEvaluator
+
+import org.apache.spark.ml.regression.{RandomForestRegressionModel, RandomForestRegressor}
+
+##features
+val featuresCols=Array("director","country","type","duration")
+val assembler = new VectorAssembler().setInputCols(featuresCols).setOutputCol("features")
+val df2 = assembler.transform(df)
+###label
+
+val labelIndexer = new StringIndexer().setInputCol("rating").setOutputCol("label")
+val df3 = labelIndexer.fit(df2).transform(df2)
+
+val splitSeed = 1234
+val Array(trainingData, testData) = df3.select("label","features").randomSplit(Array(0.8, 0.2),splitSeed)
+
+val featureIndexer = new VectorIndexer()
+  .setInputCol("features")
+  .setOutputCol("indexedFeatures")
+  .setMaxCategories(4)
+  .fit(df3.select("label","features"))
+
+val rf = new RandomForestRegressor()
+  .setLabelCol("label")
+  .setFeaturesCol("indexedFeatures")
+
+val pipeline = new Pipeline()
+  .setStages(Array(featureIndexer, rf))
+
+val model = pipeline.fit(trainingData)
+
+val predictions = model.transform(testData)
+
+val evaluator = new RegressionEvaluator()
+  .setLabelCol("label")
+  .setPredictionCol("prediction")
+  .setMetricName("rmse")
+
+val evaluator1 = new RegressionEvaluator()
+  .setLabelCol("label")
+  .setPredictionCol("prediction")
+  .setMetricName("r2")
+
+val rmse = evaluator.evaluate(predictions)
+val r2 = evaluator1.evaluate(predictions)
+
+
+-------------------------------------
+##Logistic regression
+
+val lr = new LogisticRegression()
+  .setMaxIter(10)
+  .setRegParam(0.3)
+  .setElasticNetParam(0.8)
+
+val lrModel = lr.fit(trainingData)
+
+val predictions=lrModel.transform(testData)
+
+
+
+println(s"Coefficients: \n${lrModel.coefficientMatrix}")
+println(s"Intercepts: \n${lrModel.interceptVector}")
+
+val trainingSummary = lrModel.summary
+
+val objectiveHistory = trainingSummary.objectiveHistory
+println("objectiveHistory:")
+objectiveHistory.foreach(loss => println(loss))
+
+val evaluator=new MulticlassClassificationEvaluator().setLabelCol("label").setPredictionCol("prediction").setMetricName("accuracy")
+
+val accuracy=evaluator.evaluate(predictions)
+println("Test set accuracy = $accuracy")
